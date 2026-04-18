@@ -8,7 +8,7 @@ from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramForbiddenError
 
 # 🔑 ВСТАВЬ СЮДА ТОКЕН БОТА
-BOT_TOKEN = "ВАШ_ТОКЕН"
+BOT_TOKEN = "8457589172:AAFBsnyBVIcyn5Oi6XkJqsBtQaYslMTS6so"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
