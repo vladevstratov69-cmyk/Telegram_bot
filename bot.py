@@ -7,9 +7,9 @@ from collections import defaultdict
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import CommandStart
-from aiogram.exceptions import TelegramForbiddenError
 
-BOT_TOKEN = "8457589172:AAFBsnyBVIcyn5Oi6XkJqsBtQaYslMTS6so"
+# 🔑 ВСТАВЬ НОВЫЙ ТОКЕН (старый обязательно отзови!)
+BOT_TOKEN = "8457589172:AAHmeBb7qJF-Y2Am-z-vZwC8omDpacTyUcI"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -23,11 +23,11 @@ SPAM_TIME = 10
 user_bad_words = defaultdict(int)
 BAD_WORDS_WARNING = 3
 
-# 🔴 мат (с учетом обходов)
+# 🔴 мат (ловит обходы типа бл*ть, х#й и т.д.)
 BAD_PATTERNS = [
-    r"бл[\w*#@!]*", r"х[\w*#@!]*й", r"п[\w*#@!]*зда",
-    r"е[\w*#@!]*б", r"с[\w*#@!]*ка", r"долбо[\w*#@!]*",
-    r"муд[\w*#@!]*", r"ганд[\w*#@!]*", r"пид[\w*#@!]*"
+    r"бл[\w]*", r"х[\w]*й", r"п[\w]*зда",
+    r"е[\w]*б", r"с[\w]*ка", r"долбо[\w]*",
+    r"муд[\w]*", r"ганд[\w]*", r"пид[\w]*"
 ]
 
 # 🧠 нормализация текста
@@ -35,9 +35,10 @@ def normalize(text):
     text = text.lower()
     text = text.replace("ё", "е")
     text = re.sub(r"[^a-zа-я0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# 🟢 ответы (вариативные)
+# 🟢 ответы
 ANSWERS = {
     "manager": [
         "✈️ Напишите, пожалуйста, менеджеру: @red_star_Manager",
@@ -55,16 +56,22 @@ ANSWERS = {
     ]
 }
 
-# 🧠 логика определения смысла
+# 🧠 определение смысла
 def detect_intent(text):
-    words = text.split()
+    # сначала байки (чтобы “сколько стоит байк” шло сюда)
+    if any(w in text for w in ["байк", "скутер", "прокат", "аренд", "оренд"]):
+        return "bike"
+
+    # обмен валют
+    if any(w in text for w in ["обмен", "валют", "донг"]):
+        return "exchange"
 
     # Далат
-    if "далат" in words:
+    if "далат" in text:
         return "manager"
 
-    # морская прогулка
-    if "морск" in text or "яхт" in text or "катер" in text:
+    # морская прогулка (уточнили)
+    if "морск" in text and any(w in text for w in ["прогул", "тур", "экскурс"]):
         return "manager"
 
     # бронирование
@@ -74,14 +81,6 @@ def detect_intent(text):
     # цены
     if any(w in text for w in ["сколько", "цена", "стоим"]):
         return "manager"
-
-    # аренда байка
-    if any(w in text for w in ["байк", "скутер", "прокат", "аренд", "оренд"]):
-        return "bike"
-
-    # обмен валют
-    if any(w in text for w in ["обмен", "валют", "донг"]):
-        return "exchange"
 
     return None
 
@@ -117,27 +116,21 @@ async def handle_message(message: Message):
     if await check_spam(message):
         return
 
-    # 🔴 мат
+    # 🔴 мат (без киков, только предупреждение)
     if contains_bad_word(text):
         user_bad_words[user_id] += 1
         await message.delete()
 
         if user_bad_words[user_id] == BAD_WORDS_WARNING:
             await message.answer("⚠️ Пожалуйста, соблюдайте правила общения")
-        elif user_bad_words[user_id] > BAD_WORDS_WARNING:
-            try:
-                await message.chat.kick(user_id)
-                await message.answer("🚫 Пользователь удалён за нарушения")
-            except TelegramForbiddenError:
-                pass
         return
 
-    # 🔴 блок Trip.com
-    if "trip.com" in text:
+    # 🔴 блок Trip.com (с учетом нормализации)
+    if "trip com" in text or "trip.com" in text:
         await message.delete()
         return
 
-    # 🧠 определение намерения
+    # 🧠 логика
     intent = detect_intent(text)
 
     if intent:
@@ -145,7 +138,7 @@ async def handle_message(message: Message):
         await message.answer(reply)
         return
 
-    # ❗ иначе молчит
+    # ❗ иначе бот молчит
 
 async def main():
     print("Бот запущен 🚀")
