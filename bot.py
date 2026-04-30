@@ -1,5 +1,7 @@
 import asyncio
 import time
+import re
+import random
 from collections import defaultdict
 
 from aiogram import Bot, Dispatcher
@@ -7,45 +9,85 @@ from aiogram.types import Message
 from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramForbiddenError
 
-# 🔑 ВСТАВЬ СЮДА ТОКЕН БОТА
 BOT_TOKEN = "8457589172:AAFBsnyBVIcyn5Oi6XkJqsBtQaYslMTS6so"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 🔴 расширенный список запрещённых слов и производных
-BAD_WORDS = [
-    "бля", "блять", "ебать", "ебан", "еб", "ёб", "ёбан", "заеб", "заёб",
-    "хер", "херня", "ху", "хуй", "хуя", "оху", "поху", "ниху", "пизд", "пизда", "пиздец",
-    "сука", "сучк", "сук", "гандон", "мудак", "мудила", "долбоёб", "долбаёб", "долбоеб",
-    "пидарас", "пидор", "педик", "мразь", "чмо", "урод", "сволочь", "скотина", "шлюха",
-    "тварь", "жопа", "жопой", "сукин", "суки", "уеб", "уёб", "выеб", "выёб",
-    "обосрал", "обоссал", "дрянь", "говно", "дерьмо", "дроч", "дрочить"
-]
-
-FAQ = {
-    "как забронировать": "✈️ Чтобы забронировать экскурсию, напишите менеджеру: @red_star_Manager",
-    "как забронировать экскурсию": "✈️ Напишите менеджеру: @red_star_Manager",
-
-    # новые вопросы
-    "к кому обратиться по обмену валют": "💱 Напишите, пожалуйста, нашим коллегам @RED_STAR_EXCHANGER.",
-    "обмену валют": "💱 Напишите, пожалуйста, нашим коллегам @RED_STAR_EXCHANGER.",
-    "где выгодно обменять рубли на донги": "💱 Напишите, пожалуйста, нашим коллегам @RED_STAR_EXCHANGER.",
-    "где можно ознакомиться со всеми экскурсиями и ценами": "📌 В закрепе чата есть информация обо всех экскурсиях с ценами и подробным описанием.",
-    "ознакомиться со всеми экскурсиями и ценами": "📌 В закрепе чата есть информация обо всех экскурсиях с ценами и подробным описанием.",
-    "где экскурсии и цены": "📌 В закрепе чата есть информация обо всех экскурсиях с ценами и подробным описанием.",
-    "экскурсии и цены": "📌 В закрепе чата есть информация обо всех экскурсиях с ценами и подробным описанием.",
-}
-
+# 🔴 антиспам
 user_messages = defaultdict(list)
-user_bad_words = defaultdict(int)
 SPAM_LIMIT = 5
 SPAM_TIME = 10
+
+# 🔴 счетчик мата
+user_bad_words = defaultdict(int)
 BAD_WORDS_WARNING = 3
+
+# 🔴 мат (с учетом обходов)
+BAD_PATTERNS = [
+    r"бл[\w*#@!]*", r"х[\w*#@!]*й", r"п[\w*#@!]*зда",
+    r"е[\w*#@!]*б", r"с[\w*#@!]*ка", r"долбо[\w*#@!]*",
+    r"муд[\w*#@!]*", r"ганд[\w*#@!]*", r"пид[\w*#@!]*"
+]
+
+# 🧠 нормализация текста
+def normalize(text):
+    text = text.lower()
+    text = text.replace("ё", "е")
+    text = re.sub(r"[^a-zа-я0-9\s]", " ", text)
+    return text
+
+# 🟢 ответы (вариативные)
+ANSWERS = {
+    "manager": [
+        "✈️ Напишите, пожалуйста, менеджеру: @red_star_Manager",
+        "📩 Для записи напишите менеджеру: @red_star_Manager",
+        "✈️ Менеджер всё подскажет: @red_star_Manager"
+    ],
+    "bike": [
+        "🏍 Контакты есть в закрепе. Дублируем: @d1motors",
+        "🏍 Напишите по аренде сюда: @d1motors",
+        "🏍 По байкам пишите: @d1motors"
+    ],
+    "exchange": [
+        "💱 Напишите нашим коллегам: @RED_STAR_EXCHANGER",
+        "💱 По обмену валют сюда: @RED_STAR_EXCHANGER"
+    ]
+}
+
+# 🧠 логика определения смысла
+def detect_intent(text):
+    words = text.split()
+
+    # Далат
+    if "далат" in words:
+        return "manager"
+
+    # морская прогулка
+    if "морск" in text or "яхт" in text or "катер" in text:
+        return "manager"
+
+    # бронирование
+    if any(w in text for w in ["заброн", "брони", "запис"]):
+        return "manager"
+
+    # цены
+    if any(w in text for w in ["сколько", "цена", "стоим"]):
+        return "manager"
+
+    # аренда байка
+    if any(w in text for w in ["байк", "скутер", "прокат", "аренд", "оренд"]):
+        return "bike"
+
+    # обмен валют
+    if any(w in text for w in ["обмен", "валют", "донг"]):
+        return "exchange"
+
+    return None
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer("👋 Привет! Я бот этого чата. Отвечаю на популярные вопросы и слежу за порядком 🤖")
+    await message.answer("👋 Привет! Я бот чата. Отвечаю на вопросы и слежу за порядком 🤖")
 
 async def check_spam(message: Message):
     user_id = message.from_user.id
@@ -59,47 +101,51 @@ async def check_spam(message: Message):
         return True
     return False
 
+def contains_bad_word(text):
+    return any(re.search(pattern, text) for pattern in BAD_PATTERNS)
+
 @dp.message()
 async def handle_message(message: Message):
     if not message.text:
         return
 
-    text = message.text.lower()
+    text_raw = message.text
+    text = normalize(text_raw)
     user_id = message.from_user.id
 
+    # 🔴 антиспам
     if await check_spam(message):
         return
 
-    # 🔴 обработка матов
-    if any(bad in text for bad in BAD_WORDS):
+    # 🔴 мат
+    if contains_bad_word(text):
         user_bad_words[user_id] += 1
         await message.delete()
 
         if user_bad_words[user_id] == BAD_WORDS_WARNING:
-            await message.answer(
-                f"⚠️ Вы использовали запрещённые слова 3 раза. Следующее нарушение — и вы будете исключены из чата."
-            )
-            return
+            await message.answer("⚠️ Пожалуйста, соблюдайте правила общения")
         elif user_bad_words[user_id] > BAD_WORDS_WARNING:
             try:
                 await message.chat.kick(user_id)
-                await message.answer(
-                    "🚫 Пользователь был исключён за повторное использование ненормативной лексики."
-                )
+                await message.answer("🚫 Пользователь удалён за нарушения")
             except TelegramForbiddenError:
-                await message.answer(
-                    "❗ Я не могу исключить пользователя, так как у меня нет на это прав администратора."
-                )
-            return
+                pass
         return
 
-    # 🟢 ответы на часто задаваемые вопросы (по ключам подстроки в тексте)
-    for key, answer in FAQ.items():
-        if key in text:
-            await message.answer(answer)
-            return
+    # 🔴 блок Trip.com
+    if "trip.com" in text:
+        await message.delete()
+        return
 
-    # ❗ В остальных случаях бот молчит
+    # 🧠 определение намерения
+    intent = detect_intent(text)
+
+    if intent:
+        reply = random.choice(ANSWERS[intent])
+        await message.answer(reply)
+        return
+
+    # ❗ иначе молчит
 
 async def main():
     print("Бот запущен 🚀")
